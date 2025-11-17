@@ -63,6 +63,8 @@ func main() {
 		authorized.PUT("/api/connections/:id", handler.UpdateConnection)
 		authorized.DELETE("/api/connections/:id", handler.DeleteConnection)
 		authorized.POST("/api/connections/delete-batch", handler.DeleteBatchConnections)
+		authorized.GET("/api/settings/proxy", handler.GetProxySettings)
+		authorized.PUT("/api/settings/proxy", handler.UpdateProxySettings)
 	}
 
 	// 启动服务器

@@ -1,18 +1,23 @@
 package services
 
 import (
+	"batch-connector/internal/config"
 	"batch-connector/internal/models"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/net/proxy"
 )
 
 type ConnectorService struct {
-	db *sql.DB
+	db     *sql.DB
+	config *config.Config
 }
 
 func NewConnectorService() (*ConnectorService, error) {
@@ -21,9 +26,91 @@ func NewConnectorService() (*ConnectorService, error) {
 		return nil, fmt.Errorf("初始化数据库失败: %v", err)
 	}
 
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("加载配置失败: %v", err)
+	}
+
 	return &ConnectorService{
-		db: db,
+		db:     db,
+		config: cfg,
 	}, nil
+}
+
+// UpdateConfig 更新运行时配置
+func (s *ConnectorService) UpdateConfig(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	s.config = cfg
+}
+
+// getProxyDialer 获取代理 Dialer，如果代理未启用则返回 nil
+func (s *ConnectorService) getProxyDialer() (proxy.Dialer, error) {
+	if !s.config.Proxy.Enabled {
+		return nil, nil
+	}
+
+	if s.config.Proxy.Type != "socks5" {
+		return nil, fmt.Errorf("不支持的代理类型: %s", s.config.Proxy.Type)
+	}
+
+	proxyAddr := net.JoinHostPort(s.config.Proxy.Host, s.config.Proxy.Port)
+
+	var auth *proxy.Auth
+	if s.config.Proxy.User != "" {
+		auth = &proxy.Auth{
+			User:     s.config.Proxy.User,
+			Password: s.config.Proxy.Pass,
+		}
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, auth, proxy.Direct)
+	if err != nil {
+		return nil, fmt.Errorf("创建 SOCKS5 代理 Dialer 失败: %v", err)
+	}
+
+	return dialer, nil
+}
+
+// dialWithProxy 通过代理或直接连接目标地址
+func (s *ConnectorService) dialWithProxy(network, address string) (net.Conn, error) {
+	proxyDialer, err := s.getProxyDialer()
+	if err != nil {
+		return nil, err
+	}
+
+	if proxyDialer != nil {
+		return proxyDialer.Dial(network, address)
+	}
+
+	// 没有代理，直接连接
+	dialer := &net.Dialer{
+		Timeout: 5 * time.Second,
+	}
+	return dialer.Dial(network, address)
+}
+
+// dialContextWithProxy 通过代理或直接连接目标地址（带 Context）
+func (s *ConnectorService) dialContextWithProxy(ctx context.Context, network, address string) (net.Conn, error) {
+	proxyDialer, err := s.getProxyDialer()
+	if err != nil {
+		return nil, err
+	}
+
+	if proxyDialer != nil {
+		if contextDialer, ok := proxyDialer.(proxy.ContextDialer); ok {
+			return contextDialer.DialContext(ctx, network, address)
+		}
+		// 如果不支持 Context，使用普通 Dial
+		return proxyDialer.Dial(network, address)
+	}
+
+	// 没有代理，直接连接
+	dialer := &net.Dialer{
+		Timeout: 5 * time.Second,
+	}
+	return dialer.DialContext(ctx, network, address)
 }
 
 // AddConnection 添加连接信息

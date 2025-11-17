@@ -8,22 +8,28 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 const dbFileName = "connections.db"
 
 // initDatabase 初始化数据库
 func initDatabase() (*sql.DB, error) {
-	// 获取数据库文件路径（在程序运行目录）
-	dbPath := dbFileName
+	dbPath := getDBPath()
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		log.Printf("数据库文件不存在，将创建新数据库: %s", dbPath)
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+			log.Printf("创建数据库目录失败: %v", err)
+		}
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=1")
+	dsnPath := strings.ReplaceAll(dbPath, "\\", "/")
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", dsnPath)
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %v", err)
 	}

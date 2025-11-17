@@ -712,6 +712,122 @@ async function logout() {
     }
 }
 
+// 打开代理设置
+async function openProxySettings() {
+    const modal = document.getElementById('proxy-modal');
+    if (!modal) {
+        return;
+    }
+    resetProxyResult();
+    try {
+        const response = await safeFetch('/api/settings/proxy');
+        if (!response) return;
+        const data = await response.json();
+        populateProxyForm(data.proxy || {});
+        modal.classList.add('active');
+    } catch (error) {
+        alert('获取代理配置失败: ' + error.message);
+    }
+}
+
+function populateProxyForm(proxy) {
+    const enabledInput = document.getElementById('proxy-enabled');
+    const hostInput = document.getElementById('proxy-host');
+    const portInput = document.getElementById('proxy-port');
+    const userInput = document.getElementById('proxy-user');
+    const passInput = document.getElementById('proxy-pass');
+
+    if (enabledInput) {
+        enabledInput.checked = Boolean(proxy.enabled);
+    }
+    if (hostInput) {
+        hostInput.value = proxy.host || '';
+    }
+    if (portInput) {
+        portInput.value = proxy.port || '';
+    }
+    if (userInput) {
+        userInput.value = proxy.user || '';
+    }
+    if (passInput) {
+        passInput.value = proxy.pass || '';
+    }
+    updateProxyFieldsState();
+}
+
+function updateProxyFieldsState() {
+    const enabledInput = document.getElementById('proxy-enabled');
+    const enabled = enabledInput ? enabledInput.checked : false;
+    const fields = document.querySelectorAll('.proxy-field');
+    fields.forEach(field => {
+        field.disabled = !enabled;
+        if (!enabled) {
+            field.classList.add('input-disabled');
+        } else {
+            field.classList.remove('input-disabled');
+        }
+    });
+}
+
+function resetProxyResult() {
+    const resultDiv = document.getElementById('proxy-result');
+    if (resultDiv) {
+        resultDiv.className = 'result';
+        resultDiv.textContent = '';
+    }
+}
+
+async function submitProxySettings(event) {
+    event.preventDefault();
+    const enabledInput = document.getElementById('proxy-enabled');
+    const hostInput = document.getElementById('proxy-host');
+    const portInput = document.getElementById('proxy-port');
+    const userInput = document.getElementById('proxy-user');
+    const passInput = document.getElementById('proxy-pass');
+    const resultDivId = 'proxy-result';
+
+    const payload = {
+        enabled: enabledInput ? enabledInput.checked : false,
+        type: 'socks5',
+        host: hostInput ? hostInput.value.trim() : '',
+        port: portInput ? portInput.value.trim() : '',
+        user: userInput ? userInput.value.trim() : '',
+        pass: passInput ? passInput.value : ''
+    };
+
+    if (payload.enabled && (!payload.host || !payload.port)) {
+        showResult(resultDivId, '启用代理时必须填写主机和端口', 'error');
+        return;
+    }
+
+    resetProxyResult();
+    const resultDiv = document.getElementById(resultDivId);
+    if (resultDiv) {
+        resultDiv.textContent = '保存中...';
+        resultDiv.className = 'result';
+        resultDiv.style.display = 'block';
+    }
+
+    try {
+        const response = await safeFetch('/api/settings/proxy', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        if (!response) return;
+        const data = await response.json();
+        if (response.ok) {
+            showResult(resultDivId, data.message || '代理配置已更新', 'success');
+        } else {
+            showResult(resultDivId, data.error || '代理配置保存失败', 'error');
+        }
+    } catch (error) {
+        showResult(resultDivId, '代理配置保存失败: ' + error.message, 'error');
+    }
+}
+
 // 显示使用须知弹窗
 function showNoticeModal() {
     const modal = document.getElementById('notice-modal');
@@ -781,4 +897,13 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         checkNotice();
     }, 100);
+
+    const proxyForm = document.getElementById('proxy-form');
+    if (proxyForm) {
+        proxyForm.addEventListener('submit', submitProxySettings);
+    }
+    const proxyToggle = document.getElementById('proxy-enabled');
+    if (proxyToggle) {
+        proxyToggle.addEventListener('change', updateProxyFieldsState);
+    }
 });

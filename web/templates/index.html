@@ -15,6 +15,7 @@
                 <p style="font-size: 12px; color: #666; margin-top: 4px;">公众号：知攻善防实验室 | 开发者：ChinaRan404</p>
             </div>
             <div class="header-actions">
+                <button class="btn btn-sm btn-secondary" onclick="openProxySettings()">代理设置</button>
                 <button class="btn btn-sm btn-primary" onclick="showImportModal()">导入 CSV</button>
                 <button class="btn btn-sm btn-primary" onclick="showAddModal()">添加连接</button>
                 <button class="btn btn-sm btn-secondary" onclick="refreshConnections()">刷新</button>
@@ -122,6 +123,51 @@
                 </form>
                 <div id="connections-list" class="connections-list"></div>
             </main>
+        </div>
+    </div>
+
+    <!-- 代理设置模态框 -->
+    <div id="proxy-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>全局代理设置</h3>
+                <button class="modal-close" onclick="closeModal('proxy-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="hint">代理目前以 SOCKS5 形式应用于支持的服务（SSH、Redis、SMB 等）。</p>
+                <form id="proxy-form">
+                    <div class="form-group">
+                        <label class="checkbox-wrapper" style="margin-bottom: 0;">
+                            <input type="checkbox" id="proxy-enabled">
+                            <span>启用 SOCKS5 代理</span>
+                        </label>
+                        <small class="proxy-note">启用后，将优先通过代理尝试连接；关闭则直接访问目标地址。</small>
+                    </div>
+                    <div class="proxy-grid">
+                        <div class="form-group">
+                            <label for="proxy-host">代理主机</label>
+                            <input type="text" id="proxy-host" class="proxy-field" placeholder="127.0.0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="proxy-port">代理端口</label>
+                            <input type="text" id="proxy-port" class="proxy-field" placeholder="1080">
+                        </div>
+                        <div class="form-group">
+                            <label for="proxy-user">用户名（可选）</label>
+                            <input type="text" id="proxy-user" class="proxy-field" placeholder="留空表示无需认证">
+                        </div>
+                        <div class="form-group">
+                            <label for="proxy-pass">密码（可选）</label>
+                            <input type="password" id="proxy-pass" class="proxy-field" placeholder="留空表示无需认证">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('proxy-modal')">取消</button>
+                        <button type="submit" class="btn btn-primary">保存设置</button>
+                    </div>
+                </form>
+                <div id="proxy-result" class="result"></div>
+            </div>
         </div>
     </div>
 
@@ -272,7 +318,7 @@
                         <li style="margin-bottom: 8px;">禁止用于未授权的系统扫描和攻击</li>
                         <li style="margin-bottom: 8px;">使用本工具产生的任何后果由使用者自行承担</li>
                         <li style="margin-bottom: 8px;">请妥善保管登录密码和连接信息</li>
-                        <li style="margin-bottom: 8px;">github：xxx</li>
+                        <li style="margin-bottom: 8px;">https://github.com/ChinaRan0/Attack_login</li>
                         <li style="margin-bottom: 8px;">公众号：知攻善防实验室 | 开发者：ChinaRan404</li>
                     </ol>
                     <p style="color: #d32f2f; font-weight: 500;">请遵守相关法律法规，合法合规使用本工具。</p>

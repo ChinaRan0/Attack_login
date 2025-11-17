@@ -368,3 +368,58 @@ func (h *Handler) UpdateConnection(c *gin.Context) {
 		"connection": conn,
 	})
 }
+
+// GetProxySettings 获取代理配置
+func (h *Handler) GetProxySettings(c *gin.Context) {
+	cfg := config.GetConfig()
+	if cfg == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法加载配置"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"proxy": cfg.Proxy,
+	})
+}
+
+// UpdateProxySettings 更新代理配置
+func (h *Handler) UpdateProxySettings(c *gin.Context) {
+	var req config.ProxyConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误: " + err.Error()})
+		return
+	}
+
+	if req.Type == "" {
+		req.Type = "socks5"
+	}
+
+	if req.Enabled {
+		if strings.TrimSpace(req.Host) == "" || strings.TrimSpace(req.Port) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "启用代理时必须填写主机和端口"})
+			return
+		}
+	}
+
+	current := config.GetConfig()
+	if current == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法加载配置"})
+		return
+	}
+
+	updated := *current
+	updated.Proxy = req
+
+	if err := config.SaveConfig(&updated); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存配置失败: " + err.Error()})
+		return
+	}
+
+	h.config = &updated
+	h.service.UpdateConfig(&updated)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "代理配置已更新",
+		"proxy":   updated.Proxy,
+	})
+}

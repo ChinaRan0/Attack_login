@@ -29,6 +29,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/proxy"
 )
 
 // addLog 添加日志
@@ -102,15 +103,43 @@ func (s *ConnectorService) connectRedis(conn *models.Connection) {
 	ctx := context.Background()
 	addr := net.JoinHostPort(conn.IP, conn.Port)
 	s.addLog(conn, fmt.Sprintf("连接地址: %s", addr))
+	
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+	}
+
+	// 创建 Dialer
+	var dialer func(ctx context.Context, network, addr string) (net.Conn, error)
+	if s.config.Proxy.Enabled {
+		proxyDialer, err := s.getProxyDialer()
+		if err != nil {
+			s.addLog(conn, fmt.Sprintf("✗ 创建代理 Dialer 失败: %v", err))
+			conn.Status = "failed"
+			conn.Message = fmt.Sprintf("代理配置错误: %v", err)
+			return
+		}
+		if contextDialer, ok := proxyDialer.(proxy.ContextDialer); ok {
+			dialer = contextDialer.DialContext
+		} else {
+			dialer = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return proxyDialer.Dial(network, addr)
+			}
+		}
+	}
 
 	// 如果用户提供了密码，直接使用密码连接，跳过未授权访问
 	if conn.Pass != "" {
 		s.addLog(conn, "尝试使用密码连接")
-		rdb := redis.NewClient(&redis.Options{
+		opts := &redis.Options{
 			Addr:     addr,
 			Password: conn.Pass,
 			DB:       0,
-		})
+		}
+		if dialer != nil {
+			opts.Dialer = dialer
+		}
+		rdb := redis.NewClient(opts)
 		_, err := rdb.Ping(ctx).Result()
 		if err == nil {
 			s.addLog(conn, "✓ 密码认证成功")
@@ -133,11 +162,15 @@ func (s *ConnectorService) connectRedis(conn *models.Connection) {
 
 	// 如果没有提供密码，尝试未授权访问
 	s.addLog(conn, "尝试未授权访问（无密码）")
-	rdb := redis.NewClient(&redis.Options{
+	opts := &redis.Options{
 		Addr:     addr,
 		Password: "",
 		DB:       0,
-	})
+	}
+	if dialer != nil {
+		opts.Dialer = dialer
+	}
+	rdb := redis.NewClient(opts)
 
 	_, err := rdb.Ping(ctx).Result()
 	if err == nil {
@@ -213,6 +246,12 @@ func (s *ConnectorService) getRedisDatabases(addr, password string, ctx context.
 func (s *ConnectorService) connectFTP(conn *models.Connection) {
 	addr := net.JoinHostPort(conn.IP, conn.Port)
 	s.addLog(conn, fmt.Sprintf("连接地址: %s", addr))
+	
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: FTP 连接暂不支持代理，将尝试直接连接")
+	}
 
 	var ftpConn *ftp.ServerConn
 	var err error
@@ -348,6 +387,12 @@ func (s *ConnectorService) getFTPDirectoryList(ftpConn *ftp.ServerConn) string {
 
 // connectPostgreSQL 连接 PostgreSQL
 func (s *ConnectorService) connectPostgreSQL(conn *models.Connection) {
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: PostgreSQL 连接暂不支持代理，将尝试直接连接")
+	}
+	
 	// 如果用户提供了用户名和密码，直接使用，跳过默认用户连接
 	if conn.User != "" && conn.Pass != "" {
 		s.addLog(conn, fmt.Sprintf("尝试用户 %s 密码认证", conn.User))
@@ -474,6 +519,12 @@ func (s *ConnectorService) getPostgreSQLDatabases(db *sql.DB) string {
 
 // connectMySQL 连接 MySQL
 func (s *ConnectorService) connectMySQL(conn *models.Connection) {
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: MySQL 连接暂不支持代理，将尝试直接连接")
+	}
+	
 	// 如果提供了密码，直接使用密码认证
 	if conn.Pass != "" && conn.User != "" {
 		s.addLog(conn, fmt.Sprintf("尝试用户 %s 密码认证", conn.User))
@@ -566,6 +617,12 @@ func (s *ConnectorService) connectSQLServer(conn *models.Connection) {
 	}
 	server := net.JoinHostPort(conn.IP, port)
 	s.addLog(conn, fmt.Sprintf("目标 SQL Server 地址: %s", server))
+	
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: SQL Server 连接暂不支持代理，将尝试直接连接")
+	}
 
 	type attempt struct {
 		user  string
@@ -759,6 +816,12 @@ func (s *ConnectorService) getMySQLDatabases(db *sql.DB) string {
 
 // connectRabbitMQ 连接 RabbitMQ
 func (s *ConnectorService) connectRabbitMQ(conn *models.Connection) {
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: RabbitMQ 连接暂不支持代理，将尝试直接连接")
+	}
+	
 	var username, password string
 	var connected bool
 
@@ -941,6 +1004,11 @@ func (s *ConnectorService) addLogForConnections(results *[]string, message strin
 func (s *ConnectorService) connectSSH(conn *models.Connection) {
 	addr := net.JoinHostPort(conn.IP, conn.Port)
 	s.addLog(conn, fmt.Sprintf("连接地址: %s", addr))
+	
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+	}
 
 	// 如果用户名为空，尝试常见默认用户名
 	users := []string{conn.User}
@@ -964,7 +1032,27 @@ func (s *ConnectorService) connectSSH(conn *models.Connection) {
 				Timeout:         5 * time.Second,
 			}
 
-			client, err := ssh.Dial("tcp", addr, config)
+			// 使用代理或直接连接
+			var client *ssh.Client
+			var err error
+			if s.config.Proxy.Enabled {
+				proxyDialer, dialErr := s.getProxyDialer()
+				if dialErr != nil {
+					s.addLog(conn, fmt.Sprintf("✗ 创建代理 Dialer 失败: %v", dialErr))
+					continue
+				}
+				connProxy, dialErr := proxyDialer.Dial("tcp", addr)
+				if dialErr != nil {
+					s.addLog(conn, fmt.Sprintf("✗ 通过代理连接失败: %v", dialErr))
+					continue
+				}
+				sshConn, chans, reqs, err := ssh.NewClientConn(connProxy, addr, config)
+				if err == nil {
+					client = ssh.NewClient(sshConn, chans, reqs)
+				}
+			} else {
+				client, err = ssh.Dial("tcp", addr, config)
+			}
 			if err == nil {
 				s.addLog(conn, fmt.Sprintf("✓ 用户 %s 密码认证成功", user))
 				s.addLog(conn, "执行命令: whoami, ip addr")
@@ -1000,7 +1088,26 @@ func (s *ConnectorService) connectSSH(conn *models.Connection) {
 			Timeout:         5 * time.Second,
 		}
 
-		client, err := ssh.Dial("tcp", addr, config)
+		var client *ssh.Client
+		var err error
+		if s.config.Proxy.Enabled {
+			proxyDialer, dialErr := s.getProxyDialer()
+			if dialErr != nil {
+				s.addLog(conn, fmt.Sprintf("✗ 创建代理 Dialer 失败: %v", dialErr))
+				continue
+			}
+			connProxy, dialErr := proxyDialer.Dial("tcp", addr)
+			if dialErr != nil {
+				s.addLog(conn, fmt.Sprintf("✗ 通过代理连接失败: %v", dialErr))
+				continue
+			}
+			sshConn, chans, reqs, err := ssh.NewClientConn(connProxy, addr, config)
+			if err == nil {
+				client = ssh.NewClient(sshConn, chans, reqs)
+			}
+		} else {
+			client, err = ssh.Dial("tcp", addr, config)
+		}
 		if err == nil {
 			s.addLog(conn, fmt.Sprintf("✓ 用户 %s 密钥认证成功", user))
 			s.addLog(conn, "执行命令: whoami, ip addr")
@@ -1049,6 +1156,12 @@ func (s *ConnectorService) executeSSHCommands(client *ssh.Client) string {
 func (s *ConnectorService) connectMongoDB(conn *models.Connection) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: MongoDB 连接暂不支持代理，将尝试直接连接")
+	}
 
 	var client *mongo.Client
 	var err error
@@ -1210,14 +1323,14 @@ func (s *ConnectorService) connectSMB(conn *models.Connection) {
 	}
 	addr := net.JoinHostPort(conn.IP, port)
 	s.addLog(conn, fmt.Sprintf("连接地址: %s", addr))
-
-	// 尝试连接
-	connTimeout := 5 * time.Second
-	dialer := &net.Dialer{
-		Timeout: connTimeout,
+	
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
 	}
 
-	connTCP, err := dialer.Dial("tcp", addr)
+	// 尝试连接
+	connTCP, err := s.dialWithProxy("tcp", addr)
 	if err != nil {
 		s.addLog(conn, fmt.Sprintf("✗ TCP 连接失败: %v", err))
 		conn.Status = "failed"
@@ -1456,6 +1569,12 @@ func (s *ConnectorService) connectMQTT(conn *models.Connection) {
 	}
 	addr := net.JoinHostPort(conn.IP, port)
 	s.addLog(conn, fmt.Sprintf("连接地址: %s", addr))
+	
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: MQTT 连接暂不支持代理，将尝试直接连接")
+	}
 
 	var client mqtt.Client
 	var username, password string
@@ -1639,6 +1758,12 @@ func (s *ConnectorService) connectOracle(conn *models.Connection) {
 	}
 	addr := net.JoinHostPort(conn.IP, port)
 	s.addLog(conn, fmt.Sprintf("目标 Oracle 数据库地址: %s", addr))
+	
+	// 检查是否使用代理
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+		s.addLog(conn, "注意: Oracle 连接暂不支持代理，将尝试直接连接")
+	}
 
 	portInt := 1521
 	if port != "" {

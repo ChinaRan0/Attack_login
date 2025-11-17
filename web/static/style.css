@@ -465,6 +465,25 @@ body {
     border-color: #667eea;
 }
 
+.proxy-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.proxy-note {
+    display: block;
+    margin-top: 8px;
+    color: #888;
+    font-size: 12px;
+}
+
+.input-disabled {
+    background: #f5f5f5 !important;
+    color: #999;
+}
+
 .form-actions {
     display: flex;
     justify-content: flex-end;

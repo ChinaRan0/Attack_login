@@ -28,15 +28,17 @@ https://pan.quark.cn/s/e375e4fc07f5
 
 ## ✨ 功能特性
 
-- ✅ **多协议支持**：支持 12 种常见服务类型的连接测试
+- ✅ **多协议支持**：支持 13 种常见服务类型的连接测试（新增 Elasticsearch）
 - ✅ **批量操作**：支持 CSV 批量导入和批量连接测试
 - ✅ **未授权检测**：自动检测常见服务的未授权访问漏洞
 - ✅ **实时状态**：实时显示连接状态和详细日志
 - ✅ **分类管理**：按服务类型分类显示和管理
 - ✅ **Web 界面**：友好的中文 Web 界面，无需命令行操作
 - ✅ **安全认证**：支持密码保护，防止未授权访问
+- ✅ **代理穿透**：内置 SOCKS5 全局代理设置，可在前端直接配置
 - ✅ **SSH 命令执行**：SSH 连接成功后自动执行系统命令
 - ✅ **跨平台支持**：支持 Windows、Linux、macOS 多平台
+- ✅ **纯 Go 依赖**：SQLite 与 Oracle 均使用纯 Go 驱动，无需额外客户端
 
 ---
 
@@ -113,6 +115,7 @@ SMB,192.168.1.106,445,administrator,P@ssw0rd!
 WMI,192.168.1.120,,administrator,P@ssw0rd!
 MQTT,192.168.1.108,1883,admin,admin123
 Oracle,192.168.1.109,1521,scott,tiger
+Elasticsearch,192.168.1.150,9200,,
 ```
 
 #### 导入步骤
@@ -125,7 +128,7 @@ Oracle,192.168.1.109,1521,scott,tiger
 ### 3. 手动添加连接
 
 1. 点击顶部工具栏的 **"添加连接"** 按钮
-2. 选择服务类型（选择后会自动显示默认端口和默认账户提示）
+2. 选择服务类型（选择后会自动显示默认端口和默认账户提示；Elasticsearch 可直接填写 `https://host:9200/_cat/indices?pretty` 等路径）
 3. 填写 IP 地址和端口
 4. 可选填写用户名和密码（留空会尝试未授权访问）
 5. 点击 **"添加并连接"** 按钮
@@ -298,6 +301,7 @@ type ConnectorService struct {
   ```
 
 - **特性**：
+  - 纯 Go 驱动（modernc.org/sqlite），避免 CGO 依赖
   - WAL 模式（Write-Ahead Logging）提高并发性能
   - 索引优化查询性能
   - 自动创建数据库文件
@@ -348,11 +352,20 @@ go h.service.Connect(conn)
   ```json
   {
     "password": "admin123",
-    "port": "18921"
+    "port": "18921",
+    "proxy": {
+      "enabled": false,
+      "type": "socks5",
+      "host": "127.0.0.1",
+      "port": "1080",
+      "user": "",
+      "pass": ""
+    }
   }
   ```
 
 - **配置加载**：使用单例模式，首次加载后缓存
+- **前端管理**：登录后点击“代理设置”即可实时修改 SOCKS5 配置（无需重启）
 
 ---
 
@@ -383,6 +396,12 @@ go h.service.Connect(conn)
 |------|---------|---------|-----------|
 | RabbitMQ | 5672 | guest | guest/guest |
 | MQTT | 1883 | admin | admin/admin 或无认证 |
+
+### 搜索/监控服务
+
+| 服务 | 默认端口 | 默认路径 | 说明 |
+|------|---------|---------|------|
+| Elasticsearch | 9200 | `/_cat/indices?pretty` | 可自定义路径 & Basic Auth，HTTP(S)+SOCKS5 |
 
 ### Windows 管理服务
 
@@ -570,6 +589,13 @@ A: 在程序运行目录下的 `connections.db` 文件。
 ---
 
 ## 📝 更新日志
+
+### v1.1.0
+
+- ✅ 新增 Elasticsearch 服务探测，默认请求 `/_cat/indices?pretty`
+- ✅ 全局 SOCKS5 代理可视化配置，前端即可切换
+- ✅ SQLite 切换至纯 Go 驱动（modernc.org/sqlite），无需 CGO
+- ✅ 登录/添加连接表单增加服务占位提示（含 ES）
 
 ### v1.0.0
 

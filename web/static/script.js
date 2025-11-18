@@ -160,7 +160,8 @@ function updateCategoryCounts(connections) {
         'WMI': 0,
         'MQTT': 0,
         'Oracle': 0,
-        'Elasticsearch': 0
+        'Elasticsearch': 0,
+        'Zookeeper': 0
     };
     
     connections.forEach(conn => {
@@ -183,6 +184,7 @@ function updateCategoryCounts(connections) {
     document.getElementById('count-MQTT').textContent = counts.MQTT;
     document.getElementById('count-Oracle').textContent = counts.Oracle;
     document.getElementById('count-Elasticsearch').textContent = counts.Elasticsearch;
+    document.getElementById('count-Zookeeper').textContent = counts.Zookeeper;
 }
 
 // 显示连接列表
@@ -339,7 +341,8 @@ const serviceConfig = {
     'WMI': { port: '135', user: '留空表示默认用户 administrator' },
     'MQTT': { port: '1883', user: '留空表示默认用户 admin/admin' },
     'Oracle': { port: '1521', user: '留空表示默认用户 sys/system 或 scott/tiger' },
-    'Elasticsearch': { port: '9200', user: '留空表示未授权访问（无认证）' }
+    'Elasticsearch': { port: '9200', user: '留空表示未授权访问（无认证）' },
+    'Zookeeper': { port: '2181', user: '留空表示未授权访问（无 ACL）' }
 };
 
 // 更新端口和用户名的 placeholder

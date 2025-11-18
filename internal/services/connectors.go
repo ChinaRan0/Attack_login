@@ -26,6 +26,7 @@ import (
 	"github.com/hirochachacha/go-smb2"
 	"github.com/jlaffaye/ftp"
 	_ "github.com/lib/pq"
+	"github.com/samuel/go-zookeeper/zk"
 	go_ora "github.com/sijms/go-ora/v2"
 	"github.com/streadway/amqp"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -92,6 +93,8 @@ func (s *ConnectorService) Connect(conn *models.Connection) {
 		s.connectOracle(conn)
 	case "elasticsearch", "es":
 		s.connectElasticsearch(conn)
+	case "zookeeper", "zk":
+		s.connectZookeeper(conn)
 	default:
 		conn.Status = "failed"
 		conn.Message = fmt.Sprintf("不支持的服务类型: %s", conn.Type)
@@ -1685,6 +1688,157 @@ func (s *ConnectorService) connectElasticsearch(conn *models.Connection) {
 		conn.Message = fmt.Sprintf("连接失败（HTTP %d）", resp.StatusCode)
 		conn.Result = body
 	}
+}
+
+// connectZookeeper 连接 ZooKeeper 并执行 ls /
+func (s *ConnectorService) connectZookeeper(conn *models.Connection) {
+	port := conn.Port
+	if port == "" {
+		port = "2181"
+	}
+
+	rawHosts := strings.TrimSpace(conn.IP)
+	if rawHosts == "" {
+		conn.Status = "failed"
+		conn.Message = "连接失败: 未指定目标地址"
+		s.addLog(conn, "未提供 ZooKeeper 地址")
+		return
+	}
+
+	splitHosts := strings.FieldsFunc(rawHosts, func(r rune) bool {
+		switch r {
+		case ',', ';', ' ', '\n', '\t':
+			return true
+		default:
+			return false
+		}
+	})
+	if len(splitHosts) == 0 {
+		splitHosts = []string{rawHosts}
+	}
+
+	var servers []string
+	for _, host := range splitHosts {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			continue
+		}
+		if _, _, err := net.SplitHostPort(host); err == nil {
+			servers = append(servers, host)
+		} else {
+			servers = append(servers, net.JoinHostPort(host, port))
+		}
+	}
+
+	if len(servers) == 0 {
+		conn.Status = "failed"
+		conn.Message = "连接失败: 无效的目标地址"
+		s.addLog(conn, "未能解析任何有效的 ZooKeeper 节点")
+		return
+	}
+
+	s.addLog(conn, fmt.Sprintf("目标节点: %s", strings.Join(servers, ", ")))
+	if s.config.Proxy.Enabled {
+		s.addLog(conn, fmt.Sprintf("使用 SOCKS5 代理: %s:%s", s.config.Proxy.Host, s.config.Proxy.Port))
+	}
+
+	dialer := func(network, address string, timeout time.Duration) (net.Conn, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		return s.dialContextWithProxy(ctx, network, address)
+	}
+
+	sessionTimeout := 10 * time.Second
+	zkConn, events, err := zk.Connect(
+		servers,
+		sessionTimeout,
+		zk.WithDialer(dialer),
+		zk.WithLogger(log.New(io.Discard, "", 0)),
+	)
+	if err != nil {
+		conn.Status = "failed"
+		conn.Message = fmt.Sprintf("连接 ZooKeeper 失败: %v", err)
+		s.addLog(conn, conn.Message)
+		return
+	}
+	defer zkConn.Close()
+
+	connected := false
+	timeout := time.After(15 * time.Second)
+	for !connected {
+		select {
+		case event := <-events:
+			if event.Err != nil {
+				conn.Status = "failed"
+				conn.Message = fmt.Sprintf("连接事件错误: %v", event.Err)
+				s.addLog(conn, conn.Message)
+				return
+			}
+			s.addLog(conn, fmt.Sprintf("事件: %s / %s", event.Type.String(), event.State.String()))
+			if event.State == zk.StateAuthFailed {
+				conn.Status = "failed"
+				conn.Message = "认证失败: digest 账号/密码错误"
+				s.addLog(conn, conn.Message)
+				return
+			}
+			if event.State == zk.StateConnected || event.State == zk.StateConnectedReadOnly {
+				connected = true
+			}
+		case <-timeout:
+			conn.Status = "failed"
+			conn.Message = "连接超时: 未能在 15 秒内建立会话"
+			s.addLog(conn, conn.Message)
+			return
+		}
+	}
+	s.addLog(conn, "✓ 成功建立 ZooKeeper 会话")
+
+	if conn.User != "" {
+		if conn.Pass == "" {
+			s.addLog(conn, "提供了用户名但未提供密码，将尝试无密码 digest 认证")
+		}
+		authPayload := fmt.Sprintf("%s:%s", conn.User, conn.Pass)
+		if err := zkConn.AddAuth("digest", []byte(authPayload)); err != nil {
+			conn.Status = "failed"
+			conn.Message = fmt.Sprintf("添加 digest 认证失败: %v", err)
+			s.addLog(conn, conn.Message)
+			return
+		}
+		s.addLog(conn, fmt.Sprintf("已添加 digest 认证账号 %s", conn.User))
+	}
+
+	s.addLog(conn, "执行命令: ls /")
+	children, stat, err := zkConn.Children("/")
+	if err != nil {
+		conn.Status = "failed"
+		conn.Message = fmt.Sprintf("执行 ls / 失败: %v", err)
+		s.addLog(conn, conn.Message)
+		return
+	}
+
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("根节点包含 %d 个子节点\n", len(children)))
+	if len(children) == 0 {
+		builder.WriteString("(无子节点)\n")
+	} else {
+		for _, child := range children {
+			builder.WriteString("- ")
+			builder.WriteString(child)
+			builder.WriteString("\n")
+		}
+	}
+	if stat != nil {
+		builder.WriteString(fmt.Sprintf("\nstat: czxid=%d, mzxid=%d, version=%d, ctime=%s, mtime=%s",
+			stat.Czxid, stat.Mzxid, stat.Version,
+			time.UnixMilli(stat.Ctime).Format(time.RFC3339),
+			time.UnixMilli(stat.Mtime).Format(time.RFC3339)))
+	}
+
+	conn.Status = "success"
+	conn.Message = "连接成功（ls / 完成）"
+	conn.Result = builder.String()
+	conn.ConnectedAt = time.Now()
+	s.addLog(conn, "✓ ls / 执行完成")
 }
 
 // connectMQTT 连接 MQTT

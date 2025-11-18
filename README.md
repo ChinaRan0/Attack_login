@@ -1,5 +1,6 @@
 # Attack_login - 批量连接测试工具
 
+
 一个基于 Golang 开发的 Web 批量连接测试工具，专为红队攻防演练和安全测试设计，支持批量测试多种服务的连接状态和未授权访问检测。
 
 下载：
@@ -10,6 +11,7 @@ https://pan.quark.cn/s/e375e4fc07f5
 
 **公众号：知攻善防实验室**  
 **开发者：ChinaRan404**
+
 
 ---
 
@@ -28,7 +30,7 @@ https://pan.quark.cn/s/e375e4fc07f5
 
 ## ✨ 功能特性
 
-- ✅ **多协议支持**：支持 13 种常见服务类型的连接测试（新增 Elasticsearch）
+- ✅ **多协议支持**：支持 14 种常见服务类型的连接测试（新增 Zookeeper + Elasticsearch）
 - ✅ **批量操作**：支持 CSV 批量导入和批量连接测试
 - ✅ **未授权检测**：自动检测常见服务的未授权访问漏洞
 - ✅ **实时状态**：实时显示连接状态和详细日志
@@ -116,6 +118,7 @@ WMI,192.168.1.120,,administrator,P@ssw0rd!
 MQTT,192.168.1.108,1883,admin,admin123
 Oracle,192.168.1.109,1521,scott,tiger
 Elasticsearch,192.168.1.150,9200,,
+Zookeeper,192.168.1.151,2181,admin,secret
 ```
 
 #### 导入步骤
@@ -128,7 +131,7 @@ Elasticsearch,192.168.1.150,9200,,
 ### 3. 手动添加连接
 
 1. 点击顶部工具栏的 **"添加连接"** 按钮
-2. 选择服务类型（选择后会自动显示默认端口和默认账户提示；Elasticsearch 可直接填写 `https://host:9200/_cat/indices?pretty` 等路径）
+2. 选择服务类型（选择后会自动显示默认端口和默认账户提示；Elasticsearch 可直接填写 `https://host:9200/_cat/indices?pretty`；Zookeeper 可填写多个节点 `10.0.0.1,10.0.0.2` 并自动补全端口）
 3. 填写 IP 地址和端口
 4. 可选填写用户名和密码（留空会尝试未授权访问）
 5. 点击 **"添加并连接"** 按钮
@@ -316,6 +319,7 @@ type ConnectorService struct {
 - **SSH**: 使用 `golang.org/x/crypto/ssh`
 - **MongoDB**: 使用 `go.mongodb.org/mongo-driver`
 - **Oracle**: 使用 `github.com/sijms/go-ora/v2`（纯 Go 实现，无需 Instant Client）
+- **Zookeeper**: 使用 `github.com/samuel/go-zookeeper/zk`（支持多节点、digest 认证、SOCKS5 代理，默认执行 `ls /`）
 - **其他协议**: 使用对应的 Go 客户端库
 
 ### 异步连接机制
@@ -345,6 +349,7 @@ go h.service.Connect(conn)
 4. **PostgreSQL**: 尝试 postgres 用户无密码
 5. **MongoDB**: 尝试无认证连接
 6. **Oracle**: 尝试 sys/system 或 scott/tiger
+7. **Zookeeper**: 尝试无 ACL 访问（无 digest 认证）
 
 ### 配置管理
 
@@ -402,6 +407,37 @@ go h.service.Connect(conn)
 | 服务 | 默认端口 | 默认路径 | 说明 |
 |------|---------|---------|------|
 | Elasticsearch | 9200 | `/_cat/indices?pretty` | 可自定义路径 & Basic Auth，HTTP(S)+SOCKS5 |
+
+### 注册 / 协调服务
+
+| 服务 | 默认端口 | 默认命令 | 说明 |
+|------|---------|---------|------|
+| Zookeeper | 2181 | `ls /` | 支持多节点输入、digest 认证、SOCKS5 代理 |
+
+#### Zookeeper 详细说明
+
+**多节点支持**：
+- 在 IP 地址字段可以填写多个节点，使用逗号、分号或空格分隔
+- 示例：`10.0.0.1,10.0.0.2,10.0.0.3` 或 `10.0.0.1:2181;10.0.0.2:2181`
+- 如果只提供 IP 地址（不含端口），会自动使用默认端口 2181
+- 如果节点已包含端口号，则使用指定的端口
+
+**认证方式**：
+- 支持 digest 认证（用户名:密码格式）
+- 如果提供了用户名但未提供密码，会尝试无密码 digest 认证
+- 留空用户名和密码表示尝试未授权访问（无 ACL）
+
+**连接特性**：
+- 自动建立 ZooKeeper 会话（会话超时 10 秒）
+- 连接成功后自动执行 `ls /` 命令，列出根节点下的所有子节点
+- 显示节点统计信息（czxid、mzxid、version、创建时间、修改时间）
+- 支持 SOCKS5 代理连接
+- 连接超时时间：15 秒
+
+**使用示例**：
+- 单节点：`192.168.1.100` 或 `192.168.1.100:2181`
+- 多节点：`192.168.1.100,192.168.1.101,192.168.1.102`
+- 带认证：用户名填写 `admin`，密码填写 `secret`
 
 ### Windows 管理服务
 
@@ -593,6 +629,7 @@ A: 在程序运行目录下的 `connections.db` 文件。
 ### v1.1.0
 
 - ✅ 新增 Elasticsearch 服务探测，默认请求 `/_cat/indices?pretty`
+- ✅ 新增 Zookeeper 探测，默认执行 `ls /` 并支持 digest 认证/多节点
 - ✅ 全局 SOCKS5 代理可视化配置，前端即可切换
 - ✅ SQLite 切换至纯 Go 驱动（modernc.org/sqlite），无需 CGO
 - ✅ 登录/添加连接表单增加服务占位提示（含 ES）

@@ -255,6 +255,7 @@ body {
 .connection-type.mqtt { background: #660066; }
 .connection-type.oracle { background: #f80000; }
 .connection-type.elasticsearch { background: #f2992e; }
+.connection-type.zookeeper { background: #5c6bc0; }
 .connection-type.smb { background: #4b5563; }
 .connection-type.wmi { background: #1d4ed8; }
 
